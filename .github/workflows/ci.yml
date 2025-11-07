@@ -35,6 +35,7 @@ jobs:
             echo "env=stg" >> $GITHUB_OUTPUT
           else
             echo "env=unknown" >> $GITHUB_OUTPUT
+          fi
 
       - id: changes
         uses: tj-actions/changed-files@v46.0.1
@@ -83,3 +84,4 @@ jobs:
             echo "Deploying Step Function from: $w"
             bash scripts/deploy_step_function.sh "$w" "${{ needs.detect_changes.outputs.env }}"
           done
+
