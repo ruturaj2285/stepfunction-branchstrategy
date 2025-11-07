@@ -1,0 +1,18 @@
+{
+  "Comment": "POC data pipeline (stg)",
+  "StartAt": "InvokeReportJob",
+  "States": {
+    "InvokeReportJob": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "report-job-stg",
+        "Payload.$": "$"
+      },
+      "ResultSelector": {
+        "lambda.$": "$.Payload"
+      },
+      "End": true
+    }
+  }
+}
