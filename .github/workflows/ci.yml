@@ -1,0 +1,85 @@
+name: Jaime-DataCollection
+
+on:
+  push:
+    branches:
+      - "develop/*"     # Dev
+      - "release/*"     # Stg
+    tags:
+      - "v*.*.*"        # Prod
+    paths:
+      - functions/**
+      - step-function-workflow/**
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  detect_changes:
+    runs-on: ubuntu-latest
+    outputs:
+      functions: ${{ steps.filter.outputs.functions }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+      env: ${{ steps.detect.outputs.env }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - id: detect
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "env=prod" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF_NAME}" == develop* ]]; then
+            echo "env=dev" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF_NAME}" == release* ]]; then
+            echo "env=stg" >> $GITHUB_OUTPUT
+          else
+            echo "env=unknown" >> $GITHUB_OUTPUT
+
+      - id: changes
+        uses: tj-actions/changed-files@v46.0.1
+        with:
+          dir_names: true
+          files: |
+            functions/**
+            step-function-workflow/**
+
+      - id: filter
+        run: |
+          ENV="${{ steps.detect.outputs.env }}"
+          FUNCTIONS=$(echo '${{ steps.changes.outputs.all_changed_files }}' | jq -r '[.[] | select(startswith("functions/"))]')
+          WORKFLOWS=$(echo '${{ steps.changes.outputs.all_changed_files }}' | jq -r "[.[] | select(startswith(\"step-function-workflow/${ENV}\"))]")
+          echo "functions=${FUNCTIONS}" >> $GITHUB_OUTPUT
+          echo "workflows=${WORKFLOWS}" >> $GITHUB_OUTPUT
+
+  # Example job showing how you'd call deploy scripts
+  deploy:
+    needs: detect_changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Print what changed
+        run: |
+          echo "Env:        ${{ needs.detect_changes.outputs.env }}"
+          echo "Functions:  ${{ needs.detect_changes.outputs.functions }}"
+          echo "Workflows:  ${{ needs.detect_changes.outputs.workflows }}"
+
+      # Example: loop and deploy functions
+      - name: Deploy changed Lambdas
+        if: ${{ needs.detect_changes.outputs.functions != '[]' }}
+        run: |
+          echo '${{ needs.detect_changes.outputs.functions }}' | jq -r '.[]' | while read f; do
+            ROOT=$(echo "$f" | awk -F/ '{print $1"/"$2}')
+            echo "Deploying Lambda: $ROOT"
+            bash scripts/deploy_lambda.sh "$ROOT" "${{ needs.detect_changes.outputs.env }}"
+          done
+
+      # Example: loop and deploy step functions
+      - name: Deploy changed Step Functions
+        if: ${{ needs.detect_changes.outputs.workflows != '[]' }}
+        run: |
+          echo '${{ needs.detect_changes.outputs.workflows }}' | jq -r '.[]' | while read w; do
+            echo "Deploying Step Function from: $w"
+            bash scripts/deploy_step_function.sh "$w" "${{ needs.detect_changes.outputs.env }}"
+          done
